@@ -8,7 +8,7 @@ from skimage.metrics import structural_similarity as ssim
 import time
 import random
 
-upright_folder = "images_training"
+upright_folder = "images"
 os.makedirs(upright_folder, exist_ok=True)
 target_wallet = "0x30AC367FB034295cB2Bfa85440db63f3E5c06504"
 
@@ -98,7 +98,7 @@ def submit_captcha(session, captcha_id, angle, proxies):
     return res.json()
 
 def claim_faucet(session, token, captcha_id, wallet, proxies):
-    url = f"https://faucet-api.roninchain.com/faucet/ron/{wallet}"
+    url = f"https://faucet-api.roninchain.com/faucet/weth/{wallet}"
     payload = {
         "token": token,
         "id": captcha_id
