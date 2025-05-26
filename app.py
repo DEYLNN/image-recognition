@@ -118,7 +118,7 @@ if __name__ == "__main__":
         if not check_proxy(proxy):
             print("Skip proxy, tidak bisa dipakai.\n")
             continue
-
+# /
         session = requests.Session()
         print(f"\nMulai claim 5x untuk proxy: {proxy}")
         for i in range(5):
