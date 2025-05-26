@@ -108,7 +108,7 @@ def claim_faucet(session, token, captcha_id, wallet, proxies):
     return res.json()
 
 if __name__ == "__main__":
-    with open("proxy_clean.txt") as f:
+    with open("proxies.txt") as f:
         proxy_list = [line.strip() for line in f if line.strip()]
 
     for proxy in proxy_list:
