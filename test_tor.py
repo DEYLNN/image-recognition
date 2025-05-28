@@ -4,10 +4,13 @@ import base64
 import numpy as np
 import cv2
 import glob
-from skimage.metrics import structural_similarity as ssim
 import time
 import random
+from skimage.metrics import structural_similarity as ssim
+from stem import Signal
+from stem.control import Controller
 
+# === KONFIGURASI ===
 upright_folder = "images"
 os.makedirs(upright_folder, exist_ok=True)
 target_wallet = "0x30AC367FB034295cB2Bfa85440db63f3E5c06504"
@@ -20,6 +23,12 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0",
 ]
 
+proxies = {
+    'http': 'socks5h://127.0.0.1:9050',
+    'https': 'socks5h://127.0.0.1:9050',
+}
+
+# === FUNGSI ===
 def make_headers():
     return {
         "accept": "application/json, text/plain, */*",
@@ -35,6 +44,12 @@ def make_headers():
         "sec-fetch-site": "cross-site",
         "user-agent": random.choice(USER_AGENTS)
     }
+
+def new_tor_ip():
+    with Controller.from_port(port=9051) as controller:
+        controller.authenticate(password='yourpassword')  # GANTI dengan password yang di-hash di torrc
+        controller.signal(Signal.NEWNYM)
+        print("[🔄] IP TOR diganti")
 
 def fetch_captcha(session):
     url = "https://x.skymavis.com/captcha-srv/check"
@@ -52,7 +67,7 @@ def fetch_captcha(session):
     captcha_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     return captcha_id, captcha_img
 
-def predict_upright_angle(captcha_img, upright_folder="images"):
+def predict_upright_angle(captcha_img):
     captcha_gray = cv2.cvtColor(captcha_img, cv2.COLOR_BGR2GRAY)
     h, w = captcha_gray.shape
     upright_files = glob.glob(f"{upright_folder}/*.png")
@@ -96,32 +111,43 @@ def claim_faucet(session, token, captcha_id, wallet):
     res = session.post(url, json=payload, headers=headers, timeout=15)
     return res.json()
 
-if __name__ == "__main__":
+# === MAIN LOOP ===
+BATCH = 3        # Berapa kali ganti IP
+PER_IP = 5       # Berapa kali klaim per IP
+
+for ip_round in range(BATCH):
+    print(f"\n[🌐] IP Batch ke-{ip_round+1}")
+    new_tor_ip()
+    time.sleep(5)
+
     session = requests.Session()
-    print(f"\nMulai claim 5x tanpa proxy:")
-    for i in range(5):
-        print(f"\n=== Iterasi ke-{i+1} / 5 ===")
+    session.proxies = proxies
+
+    for claim_num in range(PER_IP):
+        print(f"\n== Claim ke-{claim_num+1} (IP batch {ip_round+1}) ==")
         try:
             captcha_id, captcha_img = fetch_captcha(session)
-            print(f"[{i+1}] Captcha diambil (ID: {captcha_id})")
+            print(f"[{claim_num+1}] Captcha ID: {captcha_id}")
 
             angle, score, ref = predict_upright_angle(captcha_img)
-            print(f"[{i+1}] Prediksi captcha harus diputar: {angle} derajat (score: {score:.4f}) Ref: {ref}")
+            print(f"[{claim_num+1}] Prediksi: {angle}° | Score: {score:.4f} | Ref: {ref}")
 
             submit_response = submit_captcha(session, captcha_id, angle)
-            print(f"[{i+1}] Response submit:\n{submit_response}")
+            print(f"[{claim_num+1}] Submit:\n{submit_response}")
 
             token = submit_response.get("token")
             faucet_id = submit_response.get("result", {}).get("id")
 
             if token and faucet_id:
                 claim_response = claim_faucet(session, token, faucet_id, target_wallet)
-                print(f"[{i+1}] Response claim faucet:\n{claim_response}")
+                print(f"[{claim_num+1}] Claim:\n{claim_response}")
             else:
-                print(f"[{i+1}] [!] Gagal dapat token atau ID untuk claim faucet.")
+                print(f"[{claim_num+1}] Token atau ID kosong.")
         except Exception as e:
-            print(f"[{i+1}] [ERROR] {e}")
+            print(f"[{claim_num+1}] [ERROR] {e}")
+
         delay = random.uniform(10, 15)
-        print(f"Delay {delay:.2f} detik sebelum lanjut...")
+        print(f"⏳ Delay {delay:.2f} detik...")
         time.sleep(delay)
-    print(f"===== Selesai 5x claim faucet tanpa proxy =====\n")
+
+print("\n✅ Selesai semua klaim faucet via TOR\n")

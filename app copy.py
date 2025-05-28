@@ -36,14 +36,25 @@ def make_headers():
         "user-agent": random.choice(USER_AGENTS)
     }
 
-def fetch_captcha(session):
+def check_proxy(proxy):
+    test_url = "http://httpbin.org/ip"
+    proxies = {"http": proxy, "https": proxy}
+    try:
+        resp = requests.get(test_url, proxies=proxies, timeout=8)
+        print(f"[Proxy OK] {proxy} -> IP: {resp.json()['origin']}")
+        return True
+    except Exception as e:
+        print(f"[Proxy FAIL] {proxy} - {e}")
+        return False
+
+def fetch_captcha(session, proxies):
     url = "https://x.skymavis.com/captcha-srv/check"
     payload = {
         "app_key": "c7306be6-6e3d-4a3a-9fbe-ec1ca58a31c9",
         "context": "ronin-faucet"
     }
     headers = make_headers()
-    res = session.post(url, json=payload, headers=headers, timeout=15)
+    res = session.post(url, json=payload, headers=headers, proxies=proxies, timeout=15)
     data = res.json()
     captcha_id = data["id"]
     img_base64 = data["image"]
@@ -75,7 +86,7 @@ def predict_upright_angle(captcha_img, upright_folder="images"):
 
     return best_angle, best_score, best_ref
 
-def submit_captcha(session, captcha_id, angle):
+def submit_captcha(session, captcha_id, angle, proxies):
     url = "https://x.skymavis.com/captcha-srv/submit"
     payload = {
         "app_key": "c7306be6-6e3d-4a3a-9fbe-ec1ca58a31c9",
@@ -83,45 +94,59 @@ def submit_captcha(session, captcha_id, angle):
         "result": angle
     }
     headers = make_headers()
-    res = session.post(url, json=payload, headers=headers, timeout=15)
+    res = session.post(url, json=payload, headers=headers, proxies=proxies, timeout=15)
     return res.json()
 
-def claim_faucet(session, token, captcha_id, wallet):
+def claim_faucet(session, token, captcha_id, wallet, proxies):
     url = f"https://faucet-api.roninchain.com/faucet/weth/{wallet}"
     payload = {
         "token": token,
         "id": captcha_id
     }
     headers = make_headers()
-    res = session.post(url, json=payload, headers=headers, timeout=15)
+    res = session.post(url, json=payload, headers=headers, proxies=proxies, timeout=15)
     return res.json()
 
 if __name__ == "__main__":
-    session = requests.Session()
-    print(f"\nMulai claim 5x tanpa proxy:")
-    for i in range(5):
-        print(f"\n=== Iterasi ke-{i+1} / 5 ===")
-        try:
-            captcha_id, captcha_img = fetch_captcha(session)
-            print(f"[{i+1}] Captcha diambil (ID: {captcha_id})")
+    with open("proxies.txt") as f:
+        proxy_list = [line.strip() for line in f if line.strip()]
 
-            angle, score, ref = predict_upright_angle(captcha_img)
-            print(f"[{i+1}] Prediksi captcha harus diputar: {angle} derajat (score: {score:.4f}) Ref: {ref}")
+    for proxy in proxy_list:
+        print(f"\n======= Testing Proxy: {proxy} =======")
+        # Otomatis support http, socks4, socks5
+        proxies = {"http": proxy, "https": proxy}
+        if not check_proxy(proxy):
+            print("Skip proxy, tidak bisa dipakai.\n")
+            continue
+# /
+        session = requests.Session()
+        print(f"\nMulai claim 5x untuk proxy: {proxy}")
+        for i in range(5):
+            print(f"\n=== Iterasi ke-{i+1} / 5 ===")
+            try:
+                captcha_id, captcha_img = fetch_captcha(session, proxies)
+                print(f"[{i+1}] Captcha diambil (ID: {captcha_id})")
 
-            submit_response = submit_captcha(session, captcha_id, angle)
-            print(f"[{i+1}] Response submit:\n{submit_response}")
+                angle, score, ref = predict_upright_angle(captcha_img)
+                print(f"[{i+1}] Prediksi captcha harus diputar: {angle} derajat (score: {score:.4f}) Ref: {ref}")
 
-            token = submit_response.get("token")
-            faucet_id = submit_response.get("result", {}).get("id")
+                submit_response = submit_captcha(session, captcha_id, angle, proxies)
+                print(f"[{i+1}] Response submit:\n{submit_response}")
 
-            if token and faucet_id:
-                claim_response = claim_faucet(session, token, faucet_id, target_wallet)
-                print(f"[{i+1}] Response claim faucet:\n{claim_response}")
-            else:
-                print(f"[{i+1}] [!] Gagal dapat token atau ID untuk claim faucet.")
-        except Exception as e:
-            print(f"[{i+1}] [ERROR] {e}")
-        delay = random.uniform(10, 15)
-        print(f"Delay {delay:.2f} detik sebelum lanjut...")
-        time.sleep(delay)
-    print(f"===== Selesai 5x claim faucet tanpa proxy =====\n")
+                token = submit_response.get("token")
+                faucet_id = submit_response.get("result", {}).get("id")
+
+                if token and faucet_id:
+                    claim_response = claim_faucet(session, token, faucet_id, target_wallet, proxies)
+                    print(f"[{i+1}] Response claim faucet:\n{claim_response}")
+                else:
+                    print(f"[{i+1}] [!] Gagal dapat token atau ID untuk claim faucet.")
+            except Exception as e:
+                print(f"[{i+1}] [ERROR] {e}")
+            delay = random.uniform(10, 15)
+            print(f"Delay {delay:.2f} detik sebelum lanjut...")
+            time.sleep(delay)
+        print(f"===== Selesai 5x untuk proxy: {proxy} =====\n")
+
+    print("\nSelesai semua proxies.")
+

@@ -108,19 +108,27 @@ def claim_faucet(session, token, captcha_id, wallet, proxies):
     return res.json()
 
 if __name__ == "__main__":
+    # --- Tambahan: load proxy yg pernah limit ---
+    limit_file = "proxiesLimit.txt"
+    proxies_limit = set()
+    if os.path.exists(limit_file):
+        with open(limit_file, "r") as lf:
+            proxies_limit = set(line.strip() for line in lf if line.strip())
+
+    # --- Baca proxy dari file proxies.txt, filter yg sudah kena limit ---
     with open("proxies.txt") as f:
-        proxy_list = [line.strip() for line in f if line.strip()]
+        proxy_list = [line.strip() for line in f if line.strip() and line.strip() not in proxies_limit]
 
     for proxy in proxy_list:
         print(f"\n======= Testing Proxy: {proxy} =======")
-        # Otomatis support http, socks4, socks5
         proxies = {"http": proxy, "https": proxy}
         if not check_proxy(proxy):
             print("Skip proxy, tidak bisa dipakai.\n")
             continue
-# /
+
         session = requests.Session()
         print(f"\nMulai claim 5x untuk proxy: {proxy}")
+        rate_limited = False
         for i in range(5):
             print(f"\n=== Iterasi ke-{i+1} / 5 ===")
             try:
@@ -139,6 +147,13 @@ if __name__ == "__main__":
                 if token and faucet_id:
                     claim_response = claim_faucet(session, token, faucet_id, target_wallet, proxies)
                     print(f"[{i+1}] Response claim faucet:\n{claim_response}")
+                    # --- Cek jika rate limit, langsung tulis ke file dan break ---
+                    if isinstance(claim_response, dict) and claim_response.get('message') == 'API rate limit exceeded':
+                        print(f"[!] Proxy {proxy} terkena rate limit, simpan ke proxyLimit.txt")
+                        with open(limit_file, "a") as lf:
+                            lf.write(proxy + "\n")
+                        rate_limited = True
+                        break
                 else:
                     print(f"[{i+1}] [!] Gagal dapat token atau ID untuk claim faucet.")
             except Exception as e:
@@ -147,6 +162,7 @@ if __name__ == "__main__":
             print(f"Delay {delay:.2f} detik sebelum lanjut...")
             time.sleep(delay)
         print(f"===== Selesai 5x untuk proxy: {proxy} =====\n")
+        if rate_limited:
+            print(f"Proxy {proxy} di-skip untuk iterasi berikutnya (kena limit).")
 
     print("\nSelesai semua proxies.")
-
